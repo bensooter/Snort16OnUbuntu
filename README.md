@@ -40,17 +40,12 @@ Software versions used in this guide:
 As stated above, this guide was written geared towards installing Snort as a virtual machine running on an VirtualBox 5.0.16. The VirtualBox is a free product from [Oracle](https://www.virtualbox.org/wiki/Downloads), and which I highly recommend for testing software due to the ability to create snapshots. If you choose to install Snort outside of a virtual machine, the steps below should be the same, except for a few VirtualBox specific steps that should be fairly obvious once you've worked through this guide.
 
 # Ethernet Interface Names On Ubuntu 16.04
-**Important note for people running Ubuntu 16.04:** In Ubuntu 16.04, for new installations (not upgrades), network interfaces no longer follow the ethX standard (eth0, eth1, ...). Instead, interfaces names are assigned as Predictable Network Interface Names. This means you need to check the names of your interfaces using ifconfig, since you will need to reference the name of your interface for many steps in this guide. In my case, what was originally `eth0` is now `ens160`. If you are running Ubuntu 16.04, anywhere in this guide you see eth0, you will need to replace with your new interface name.
-
-# VMware Virtual Machine Configuration
-If you are using VMware vSphere to host your Snort virtual machine, when creating the virtual machine, make sure to select the **VMXNET 3** network adapter (not the default adapter) when creating the client virtual machine, as it works better for Snort
-
-This guide assumes that you have created a virtual machine with a single network adapter that will be used for both administrative control (over SSH) as well as for Snort to listen on for traffic. You can easily add more adapters when setting up the system or at a later date, you just need to make sure to specify the correct adapter Snort should listen on at runtime (this should be fairly obvious).
+**Important note for people running Ubuntu 16.04:** In Ubuntu 16.04, for new installations (not upgrades), network interfaces no longer follow the ethX standard (eth0, eth1, ...). Instead, interfaces names are assigned as Predictable Network Interface Names. This means you need to check the names of your interfaces using ifconfig, since you will need to reference the name of your interface for many steps in this guide. In my case, what was originally `eth0` is now `enp0s3`. If you are running Ubuntu 16.04, anywhere in this guide you see eth0, you will need to replace with your new interface name.
 
 # Installing Ubuntu
 This guide will assume that you have installed one of the supported versions of Ubuntu with all the default settings, and that you have selected ”install security updates automatically” during the configuration.
 
-Snort does not need an ip address assigned to the interface that it is listening on, however it makes it easier to manage the system remotely via ssh if an interface is reachable. In a production environment, it is recommended that you user one interface on your Snort server for management, and have Snort listen on other interfaces, but this is not required. By default Ubuntu will use DHCP to auto-configure an address, if this is the case, you can verify your ip address by running `ifconfig eth0`. If you do not have a DHCP server assigning IP addresses, configure one on your Snort system manually. You will need internet connectivity in order to download the required packages and software tarballs.
+Snort does not need an ip address assigned to the interface that it is listening on, however it makes it easier to manage the system remotely via ssh if an interface is reachable. In a production environment, it is recommended that you user one interface on your Snort server for management, and have Snort listen on other interfaces, but this is not required. By default Ubuntu will use DHCP to auto-configure an address, if this is the case, you can verify your ip address by running `ifconfig enp0s3`. If you do not have a DHCP server assigning IP addresses, configure one on your Snort system manually. You will need internet connectivity in order to download the required packages and software tarballs.
 
 Once you have logged in for the first time and verified internet connectivity, make sure the system is up to date, and install openssh-server (so we can remotely-manage the system). Reboot after installation to make sure all patches are applied.
 
@@ -79,10 +74,10 @@ Use nano to edit the network interfaces file:
 ```
 sudo nano /etc/network/interfaces
 ```
-Append the following two lines for each network interface, making sure to change eth0 to match the interface you are working on, since your interface names may be different, especially on Ubuntu 16.04:
+Append the following two lines for each network interface, making sure to change enp0s3 to match the interface you are working on, since your interface names may be different, especially on Ubuntu 16.04:
 ```
-post-up ethtool -K eth0 gro off
-post-up ethtool -K eth0 lro off
+post-up ethtool -K enp0s3 gro off
+post-up ethtool -K enp0s3 lro off
 ```
 An example of how the /etc/network/interfaces file should look for a single interface:
 ```
@@ -93,15 +88,15 @@ source /etc/network/interfaces.d/*
 auto lo
 iface lo inet loopback
 # The primary network interface
-auto eth0
-iface eth0 inet dhcp
-post-up ethtool -K eth0 gro off
-post-up ethtool -K eth0 lro off
+auto enp0s3
+iface enp0s3 inet dhcp
+post-up ethtool -K enp0s3 gro off
+post-up ethtool -K enp0s3 lro off
 ```
-Restart networking (replace eth0 with your interfaces with below) and verify that LRO and GRO are disabled:
+Restart networking (replace enp0s3 with your interfaces with below) and verify that LRO and GRO are disabled:
 ```
-user@snortserver:~$ sudo ifdown eth0 && sudo ifup eth0
-user@snortserver:~$ ethtool -k eth0 | grep receive-offload
+user@snortserver:~$ sudo ifdown enp0s3 && sudo ifup enp0s3
+user@snortserver:~$ ethtool -k enp0s3 | grep receive-offload
 generic-receive-offload: off
 large-receive-offload: off
 user@snortserver:~$
@@ -294,7 +289,7 @@ ipvar HOME_NET 10.0.0.0/24
 ```
 Note: You should not set `EXTERNAL NET` to !$HOME NET as recommended in some guides, since it can cause Snort to miss alerts.
 
-Note: it is vital that your HOME NET match the IP subnet of the interface that you want Snort to listen on. Please use `ifconfig eth0 | grep "inet add"` to ensure you have the right address and mask set. Often this will be a 192.168.1.x or 10.0.0.x IP address.
+Note: it is vital that your HOME NET match the IP subnet of the interface that you want Snort to listen on. Please use `ifconfig enp0s3 | grep "inet add"` to ensure you have the right address and mask set. Often this will be a 192.168.1.x or 10.0.0.x IP address.
 
 Set the following file paths in snort.conf, beginning at line 104:
 ```
@@ -309,16 +304,16 @@ In order to make testing Snort easy, we want to enable the `local.rules` file, w
 ```
 include $RULE_PATH/local.rules
 ```
-Once the configuration file is ready, we will have Snort verify that it is a valid file, and all necessary files it references are correct. We use the `-T` flag to test the configuration file, the `-c` flag to tell Snort which configuration file to use, and `-i` to specify the interface that Snort will listen on (this is a new requirement for the 2.9.8.x version of snort). Run `sudo snort -T -c /etc/snort/snort.conf -i eth0`. Run this command as shown below and look for the following output (only the last few lines of the output are shown
+Once the configuration file is ready, we will have Snort verify that it is a valid file, and all necessary files it references are correct. We use the `-T` flag to test the configuration file, the `-c` flag to tell Snort which configuration file to use, and `-i` to specify the interface that Snort will listen on (this is a new requirement for the 2.9.8.x version of snort). Run `sudo snort -T -c /etc/snort/snort.conf -i enp0s3`. Run this command as shown below and look for the following output (only the last few lines of the output are shown
 for clarity):
 ```
-user@snortserver:~$ sudo snort -T -i eth0 -c /etc/snort/snort.conf
+user@snortserver:~$ sudo snort -T -i enp0s3 -c /etc/snort/snort.conf
 (...)
 Snort successfully validated the configuration!
 Snort exiting
 user@snortserver:~$
 ```
-**Note for Ubuntu 16.04:** Interface names have changed, and are system specific (no longer listed as ethN). In the above command, you need to replace `eth0` with the name of your interface, as shown with the `ifconfig` command (in my case it is `ens160`).
+**Note for Ubuntu 16.04:** Interface names have changed, and are system specific (no longer listed as ethN). In the above command, you need to replace `eth0` with the name of your interface, as shown with the `ifconfig` command (in my case it is `enp0s3`).
 
 It is a good idea to scroll up through the output from this command to get a feel for what Snort is loading. A lot of it won’t make sense at this time, but it will become more clear as you work more with Snort. Look for any errors and warnings listed.
 # Writing a Simple Rule to Test Snort Detection
@@ -336,7 +331,7 @@ When you un-commented line 545 above (`include $RULE PATH/local.rules`) you were
 
 Since we made changes to the Snort configuration, we should test the configuration file again:
 ```
-sudo snort -T -c /etc/snort/snort.conf -i eth0
+sudo snort -T -c /etc/snort/snort.conf -i enp0s3
 ```
 This time if you scroll up through the output, you will find that one rule (the one we created in `local.rules`, and loaded by the `include` directive in `snort.conf`) has been loaded:
 ```
@@ -368,15 +363,15 @@ Now that we know that Snort correctly loads our rule and our configuration, we c
 | `-u snort` | Run Snort as the following user after startup |
 | `-g snort` | Run Snort as the following group after startup |
 | `-c /etc/snort/snort.conf` | The path to our `snort.conf` file |
-| `-i eth0` | The interface to listen on (change to your interface if different) |
+| `-i enp0s3` | The interface to listen on (change to your interface if different) |
 
-Note: If you are running Ubuntu 16.04, remember that your interface name is not eth0.
+Note: If you are running Ubuntu 16.04, remember that your interface name is not enp0s3.
 ```
-$ sudo /usr/local/bin/snort -A console -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+$ sudo /usr/local/bin/snort -A console -q -u snort -g snort -c /etc/snort/snort.conf -i enp0s3
 ```
-When you run this line, you will not initially see any output, however Snort is running, processing all packets that arrive on eth0 (or whichever interface you specified with the `-i` flag), comparing them to the rules it has loaded (in this case our single ICMP Ping rule), and will then print all alerts generated when a packet matches our rule to the console.
+When you run this line, you will not initially see any output, however Snort is running, processing all packets that arrive on enp0s3 (or whichever interface you specified with the `-i` flag), comparing them to the rules it has loaded (in this case our single ICMP Ping rule), and will then print all alerts generated when a packet matches our rule to the console.
 
-From another computer, ping the IP address of eth0 on the Snort computer (or alternately ping from the Snort host to another machine, or to its own eth0, but not loopback interface), and you should see console output similar to what is displayed below (in the below example, the Snort server is listening on eth0 with and IP address of 10.0.0.105, and the computer generating the ping is 10.0.0.59).
+From another computer, ping the IP address of enp0s3 on the Snort computer (or alternately ping from the Snort host to another machine, or to its own enp0s3, but not loopback interface), and you should see console output similar to what is displayed below (in the below example, the Snort server is listening on enp0s3 with and IP address of 10.0.0.105, and the computer generating the ping is 10.0.0.59).
 ```
 12/06−12:14:28.908206 [**] [1:10000001:1] ICMP test detected [**] [Classification: Generic ICMP event] [Priority: 3] {ICMP} 10.0.0.59 −> 10.0.0.105
 12/06−12:14:28.908241 [**] [1:10000001:1] ICMP test detected [**] [Classification: Generic ICMP event] [Priority: 3] {ICMP} 10.0.0.105 −> 10.0.0.59
@@ -463,9 +458,9 @@ Now we want to test that Snort is writing events to the correct binary log file,
 
 Run Snort in alert mode (the command we run below is how Snort will normally be run when we set it up as a daemon, except we aren’t using the `-D` flag which causes it to run as a daemon).
 ```
-sudo /usr/local/bin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+sudo /usr/local/bin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i enp0s3
 ```
-Ping the interface eth0 from another computer, you won’t see any output on the screen because Snort wasn’t started with the `-A console` flag like before. Once the ping stops, type `ctrl-c` to stop Snort. you should see a new file in the `/var/log/snort` directory with following name: `snort.u2.nnnnnnnnnn` (the numbers will be different because they are based on the current time. The `snort.log.nnnnnnnnnn` is the output file we created when we first tested Snort. You can delete that file if you want:
+Ping the interface enp0s3 from another computer, you won’t see any output on the screen because Snort wasn’t started with the `-A console` flag like before. Once the ping stops, type `ctrl-c` to stop Snort. you should see a new file in the `/var/log/snort` directory with following name: `snort.u2.nnnnnnnnnn` (the numbers will be different because they are based on the current time. The `snort.log.nnnnnnnnnn` is the output file we created when we first tested Snort. You can delete that file if you want:
 ```
 user@snortserver:/var/log/snort$ ls -l /var/log/snort/
 total 12
@@ -609,7 +604,7 @@ include $RULE_PATH/snort.rules
 ```
 Since we’ve modified the Snort configuration file (via the loaded rules file), we should test the Snort configuration file. This will also check the new `snort.rules` file that PulledPork created:
 ```
-sudo snort -T -c /etc/snort/snort.conf -i eth0
+sudo snort -T -c /etc/snort/snort.conf -i enp0s3
 ```
 You can ignore warnings about flowbits not being checked, as well GID duplicate warnings.
 
@@ -635,7 +630,7 @@ To create the Snort systemD service, use an editor to create a service file:
 ```
 sudo nano /lib/systemd/system/snort.service
 ```
-with the following content (change eth0 if different on your system):
+with the following content (change enp0s3 if different on your system):
 ```
 [Unit]
 Description=Snort NIDS Daemon
@@ -643,7 +638,7 @@ After=syslog.target network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i eth0
+ExecStart=/usr/local/bin/snort -q -u snort -g snort -c /etc/snort/snort.conf -i enp0s3
 
 [Install]
 WantedBy=multi-user.target
@@ -996,8 +991,8 @@ sudo nano /etc/network/interfaces
 and make modifications similar to the following, depending on the configuration of your system:
 ```
 # The primary network interface
-auto eth0
-iface eth0 inet dhcp
+auto enp0s3
+iface enp0s3 inet dhcp
 
 # Interface that Snort listens on
 auto eth1
@@ -1007,7 +1002,7 @@ iface eth1 inet manual
 	down ip link set $IFACE promisc off
 	down ifconfig $IFACE down
 ```
-In the above example, Snort will listen on `eth1` (remember that this also has to be changed in the Snort daemon script (the interface referenced by the `-i` flag in /etc/init/snort.conf). We choose not to set an IP addresson the interface that Snort will listen on, since this helps to protect the system from exploits. Management in the above example will be through `eth0` which is configured for DHCP. The command `up ip link set $IFACE promisc on` is what configures the interface for promiscuous mode, and is how the system knows to process all traffic the interface sees, not just traffic that is specifically for the adapter.
+In the above example, Snort will listen on `eth1` (remember that this also has to be changed in the Snort daemon script (the interface referenced by the `-i` flag in /etc/init/snort.conf). We choose not to set an IP addresson the interface that Snort will listen on, since this helps to protect the system from exploits. Management in the above example will be through `enp0s3` which is configured for DHCP. The command `up ip link set $IFACE promisc on` is what configures the interface for promiscuous mode, and is how the system knows to process all traffic the interface sees, not just traffic that is specifically for the adapter.
 
 To test this configuration, restart networking (or restart the system) and ensure that Snort has started, and is listening on the correct interface. Ping between two hosts on the subnet (two hosts that are not the Snort server) and you should see the events logged.
 
